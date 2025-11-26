@@ -28,7 +28,7 @@ Agent that plans and books entire vacations. A user could provide a budget, trav
 9. [Summary of Expenses]() 
    - Not Applicable
 10. **Appendix**    
-   - [Meeting Notes](Fall_Semester Meeting_Notes.pdf)  
+   - [Meeting Notes](Fall_Semester%20Meeting_Notes.pdf)
 ---
 
 
