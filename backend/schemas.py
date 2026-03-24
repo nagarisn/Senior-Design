@@ -10,6 +10,11 @@ class UserCreate(BaseModel):
     password: str
 
 
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+
+
 class UserResponse(BaseModel):
     id: int
     email: str
@@ -166,6 +171,13 @@ class ItineraryCreate(BaseModel):
     total_budget: float
 
 
+class ItineraryUpdate(BaseModel):
+    name: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    total_budget: Optional[float] = None
+
+
 class ItineraryResponse(BaseModel):
     id: int
     user_id: int
@@ -199,6 +211,36 @@ class RecommendationResponse(BaseModel):
     search_params: TravelSearchRequest
     recommendations: List[TravelRecommendation]
     generated_at: datetime
+
+
+# Price Alert Schemas
+class PriceAlertCreate(BaseModel):
+    destination: str
+    target_price: float
+
+
+class PriceAlertResponse(PriceAlertCreate):
+    id: int
+    user_id: int
+    current_price: Optional[float] = None
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Notification Schemas
+class NotificationResponse(BaseModel):
+    id: int
+    user_id: int
+    type: str
+    message: str
+    is_read: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 # Favorite Destination

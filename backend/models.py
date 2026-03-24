@@ -72,6 +72,7 @@ class Itinerary(Base):
     flights = relationship("FlightBooking", back_populates="itinerary")
     hotels = relationship("HotelBooking", back_populates="itinerary")
     activities = relationship("ActivityBooking", back_populates="itinerary")
+    collaborators = relationship("ItineraryCollaborator", back_populates="itinerary", cascade="all, delete-orphan")
 
 
 class FlightBooking(Base):
@@ -131,7 +132,7 @@ class ActivityBooking(Base):
 
 class TravelHistory(Base):
     __tablename__ = "travel_history"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     itinerary_id = Column(Integer, ForeignKey("itineraries.id"))
@@ -139,6 +140,45 @@ class TravelHistory(Base):
     travel_date = Column(DateTime, nullable=False)
     rating = Column(Integer, nullable=True)  # 1-5 user rating
     feedback = Column(Text, nullable=True)
+
+
+class PriceAlert(Base):
+    __tablename__ = "price_alerts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    destination = Column(String(255), nullable=False)
+    target_price = Column(Float, nullable=False)
+    current_price = Column(Float, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    type = Column(String(100), nullable=False)  # price_drop, booking_confirmed, collaborator_added
+    message = Column(Text, nullable=False)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+
+
+class ItineraryCollaborator(Base):
+    __tablename__ = "itinerary_collaborators"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    itinerary_id = Column(Integer, ForeignKey("itineraries.id", ondelete="CASCADE"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    role = Column(String(50), default="editor") # owner, editor, viewer
+    
+    itinerary = relationship("Itinerary", back_populates="collaborators")
+    user = relationship("User")
 
 
 def init_db():

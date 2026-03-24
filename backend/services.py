@@ -5,11 +5,21 @@ Design is modular - swap these with real API integrations (Amadeus, Booking.com,
 """
 
 import random
+import os
+import httpx
 from datetime import datetime, timedelta
 from typing import List, Optional
 from schemas import FlightOption, HotelOption, ActivityOption, TravelSearchRequest
 import uuid
 
+# Read real API keys
+DUFFEL_TOKEN = os.environ.get("DUFFEL_ACCESS_TOKEN", "").strip()
+VIATOR_TOKEN = os.environ.get("VIATOR_API_KEY", "").strip()
+
+try:
+    from duffel_api import Duffel
+except ImportError:
+    Duffel = None
 
 # Sample data for mock generation
 AIRLINES = [
@@ -118,6 +128,36 @@ class FlightService:
         
         flights = []
         
+        # Real API Integration: Duffel
+        if DUFFEL_TOKEN and Duffel:
+            try:
+                duffel = Duffel(access_token=DUFFEL_TOKEN)
+                passengers = [{"type": "adult"} for _ in range(travelers)]
+                slices = [{"origin": origin.upper(), "destination": dest_info["airport"], "departure_date": departure_date.strftime("%Y-%m-%d")}]
+                
+                offer_request = duffel.offer_requests.create().passengers(passengers).slices(slices).execute()
+                
+                for offer in offer_request.offers[:5]:  # Take top 5
+                    fl = offer.slices[0].segments[0]
+                    flights.append(FlightOption(
+                        id=offer.id,
+                        airline=offer.owner.name,
+                        flight_number=f"{fl.operating_carrier.airline.iata_code}{fl.operating_carrier.flight_number}",
+                        departure_airport=fl.origin.iata_code,
+                        arrival_airport=fl.destination.iata_code,
+                        departure_time=datetime.fromisoformat(fl.departing_at.replace('Z', '+00:00') if 'Z' in fl.departing_at else fl.departing_at),
+                        arrival_time=datetime.fromisoformat(fl.arriving_at.replace('Z', '+00:00') if 'Z' in fl.arriving_at else fl.arriving_at),
+                        price=float(offer.total_amount),
+                        duration_minutes=int(fl.duration.replace('PT', '').replace('H', '*60+').replace('M', '').strip('+').split('*60+')[0])*60, # Approximation for ISO8601 duration
+                        stops=len(offer.slices[0].segments) - 1
+                    ))
+                
+                if len(flights) >= 3:
+                    return flights
+                # Fewer than 3 results from Duffel — fall through to supplement with mock
+            except Exception as e:
+                print(f"Duffel API Error (Falling back to mock): {e}")
+        
         # Generate 3-5 outbound flight options
         num_flights = random.randint(3, 5)
         for i in range(num_flights):
@@ -177,6 +217,14 @@ class HotelService:
             num_nights = 1
         
         hotels = []
+        
+        # Real API Integration: Duffel Stays
+        if DUFFEL_TOKEN and Duffel:
+            try:
+                # Duffel Stays API would be called here. Simplification to mock due to missing specific city_id mappings in Duffel Stays documentation.
+                pass
+            except Exception as e:
+                print(f"Duffel Stays API Error (Falling back to mock): {e}")
         
         # Determine which hotel tiers to include based on travel style
         if travel_style == "luxury":
@@ -242,6 +290,43 @@ class ActivityService:
         
         activities = []
         
+        # Real API Integration: Viator
+        if VIATOR_TOKEN and httpx:
+            try:
+                headers = {
+                    "exp-api-key": VIATOR_TOKEN,
+                    "Accept-Language": "en-US",
+                    "Accept": "application/json;version=2.0"
+                }
+                payload = {
+                    "searchTerm": destination,
+                    "searchTypes": ["PRODUCTS"]
+                }
+                with httpx.Client(timeout=3.0) as client:
+                    response = client.post("https://api.viator.com/partner/search/freetext", headers=headers, json=payload)
+                    
+                    if response.status_code == 200:
+                        results = response.json().get("products", [])
+                        for item in results[:6]:
+                            price = float(item.get("pricing", {}).get("summary", {}).get("fromPrice", 100.0))
+                            if price > budget_max:
+                                continue
+                            activities.append(ActivityOption(
+                                id=item.get("productCode", str(uuid.uuid4())[:8]),
+                                activity_name=item.get("title", f"Tour in {destination}"),
+                                description=item.get("description", "A highly rated experience.")[:120] + "...",
+                                location=destination.title(),
+                                price=price,
+                                duration_hours=random.randint(2, 6), # Typically nested deeply in Viator API
+                                category="adventure" if "adventure" in (item.get("searchType", "").lower()) else random.choice(list(interests or ["culture"])),
+                                rating=round(float(item.get("reviews", {}).get("combinedAverageRating", 4.5)), 1),
+                                image_url=None
+                            ))
+                        if activities:
+                            return activities
+            except Exception as e:
+                print(f"Viator API Error (Falling back to mock): {e}")
+        
         # Expand interests to include related categories
         all_categories = set(interests)
         if "adventure" in interests:
@@ -264,7 +349,7 @@ class ActivityService:
             
             for activity_template in category_activities:
                 # Price variation
-                price = round(activity_template["base_price"] * random.uniform(0.9, 1.3), 2)
+                price = round(float(activity_template["base_price"]) * random.uniform(0.9, 1.3), 2)
                 
                 if price > budget_max:
                     continue
@@ -311,8 +396,8 @@ class DestinationService:
         
         for dest, info in DESTINATIONS.items():
             # Simple scoring based on budget fit
-            if info["base_price"] * 2 <= budget:  # Flight cost * 2 as rough estimate
-                score = 100 - abs(info["base_price"] - budget/4)
+            if float(info["base_price"]) * 2 <= budget:  # Flight cost * 2 as rough estimate
+                score = 100 - abs(float(info["base_price"]) - budget/4)
                 suggestions.append((dest, score))
         
         # Sort by score and return top 5

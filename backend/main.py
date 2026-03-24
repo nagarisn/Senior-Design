@@ -3,25 +3,38 @@ Smart Travel - Intelligent Travel Agent System
 Main FastAPI Application
 """
 
+import os
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Dict, Any
 from datetime import datetime
 import hashlib
 
 from models import (
-    init_db, get_db, User, UserPreference, Itinerary, 
-    FlightBooking, HotelBooking, ActivityBooking, FavoriteDestination
+    init_db, get_db, User, UserPreference, Itinerary,
+    FlightBooking, HotelBooking, ActivityBooking, FavoriteDestination, ItineraryCollaborator,
+    PriceAlert, Notification
 )
 from schemas import (
-    UserCreate, UserResponse, UserLogin, UserPreferenceCreate, UserPreferenceResponse,
-    TravelSearchRequest, RecommendationResponse, ItineraryCreate, ItineraryResponse,
+    UserCreate, UserResponse, UserLogin, UserUpdate, UserPreferenceCreate, UserPreferenceResponse,
+    TravelSearchRequest, RecommendationResponse, ItineraryCreate, ItineraryUpdate, ItineraryResponse,
     FlightBookingCreate, FlightBookingResponse, HotelBookingCreate, HotelBookingResponse,
-    ActivityBookingCreate, ActivityBookingResponse, FavoriteDestinationCreate, FavoriteDestinationResponse
+    ActivityBookingCreate, ActivityBookingResponse, FavoriteDestinationCreate, FavoriteDestinationResponse,
+    PriceAlertCreate, PriceAlertResponse, NotificationResponse
 )
 from recommendation_engine import recommendation_engine
 from services import DestinationService
+from typing import Optional
+from auth import verify_password, get_password_hash, create_access_token, decode_token, oauth2_scheme
+from email_service import EmailService
+from pdf_service import PDFService
+from fastapi.responses import StreamingResponse
+from scheduler import start_scheduler
+import time
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -43,6 +56,7 @@ app.add_middleware(
 @app.on_event("startup")
 def startup_event():
     init_db()
+    start_scheduler()
 
 
 # ============== Health Check ==============
@@ -55,6 +69,18 @@ def root():
 def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
 
+# Dependency for protecting routes
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    payload = decode_token(token)
+    if not payload:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"})
+    
+    user_id = payload.get("sub")
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found", headers={"WWW-Authenticate": "Bearer"})
+    return user
+
 
 # ============== User Routes ==============
 @app.post("/api/users/register", response_model=UserResponse)
@@ -64,8 +90,8 @@ def register_user(user_data: UserCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    # Hash password (simple hash for demo - use bcrypt in production)
-    password_hash = hashlib.sha256(user_data.password.encode()).hexdigest()
+    # Hash password (using bcrypt from auth module)
+    password_hash = get_password_hash(user_data.password)
     
     user = User(
         email=user_data.email,
@@ -90,24 +116,63 @@ def login_user(login_data: UserLogin, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    password_hash = hashlib.sha256(login_data.password.encode()).hexdigest()
-    if user.password_hash != password_hash:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not verify_password(login_data.password, user.password_hash):
+        # Fallback for old sha256 hashes if testing legacy data
+        old_hash = hashlib.sha256(login_data.password.encode()).hexdigest()
+        if user.password_hash != old_hash:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    # In production, return JWT token
+    # Generate JWT
+    access_token = create_access_token(data={"sub": str(user.id), "email": user.email})
+    
     return {
         "message": "Login successful",
+        "access_token": access_token,
+        "token_type": "bearer",
         "user_id": user.id,
         "name": user.name,
         "email": user.email
     }
 
 
+@app.post("/api/users/logout")
+def logout_user():
+    return {"message": "Logged out successfully"}
+
+
 @app.get("/api/users/{user_id}", response_model=UserResponse)
-def get_user(user_id: int, db: Session = Depends(get_db)):
+def get_user(user_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this profile")
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+@app.put("/api/users/{user_id}", response_model=UserResponse)
+def update_user(
+    user_id: int,
+    user_data: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user_data.name is not None:
+        user.name = user_data.name
+    if user_data.email is not None:
+        existing = db.query(User).filter(User.email == user_data.email, User.id != user_id).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already in use")
+        user.email = user_data.email
+
+    db.commit()
+    db.refresh(user)
     return user
 
 
@@ -246,12 +311,29 @@ def get_itinerary(itinerary_id: int, db: Session = Depends(get_db)):
     return itinerary
 
 
-@app.put("/api/itineraries/{itinerary_id}/status")
-def update_itinerary_status(
+@app.put("/api/itineraries/{itinerary_id}", response_model=ItineraryResponse)
+def update_itinerary(
     itinerary_id: int,
-    status: str,
+    itinerary_data: ItineraryUpdate,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    itinerary = db.query(Itinerary).filter(Itinerary.id == itinerary_id).first()
+    if not itinerary:
+        raise HTTPException(status_code=404, detail="Itinerary not found")
+    if itinerary.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    for key, value in itinerary_data.model_dump(exclude_none=True).items():
+        setattr(itinerary, key, value)
+
+    db.commit()
+    db.refresh(itinerary)
+    return itinerary
+
+
+@app.put("/api/itineraries/{itinerary_id}/status")
+def update_itinerary_status(itinerary_id: int, status: str, db: Session = Depends(get_db)):
     itinerary = db.query(Itinerary).filter(Itinerary.id == itinerary_id).first()
     if not itinerary:
         raise HTTPException(status_code=404, detail="Itinerary not found")
@@ -262,21 +344,161 @@ def update_itinerary_status(
     
     itinerary.status = status
     db.commit()
-    return {"message": "Status updated", "new_status": status}
+
+    if status == "confirmed":
+        notif = Notification(
+            user_id=itinerary.user_id,
+            type="booking_confirmed",
+            message=f"Your trip to {itinerary.destination.title()} has been confirmed!"
+        )
+        db.add(notif)
+        db.commit()
+
+    return {"message": "Payment successful", "status": itinerary.status}
 
 
-@app.delete("/api/itineraries/{itinerary_id}")
-def delete_itinerary(itinerary_id: int, db: Session = Depends(get_db)):
+@app.post("/api/itineraries/{itinerary_id}/collaborators")
+def add_collaborator(itinerary_id: int, email: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     itinerary = db.query(Itinerary).filter(Itinerary.id == itinerary_id).first()
     if not itinerary:
         raise HTTPException(status_code=404, detail="Itinerary not found")
     
+    if itinerary.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the owner can add collaborators")
+        
+    invited_user = db.query(User).filter(User.email == email).first()
+    if not invited_user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    existing = db.query(ItineraryCollaborator).filter(
+        ItineraryCollaborator.itinerary_id == itinerary_id,
+        ItineraryCollaborator.user_id == invited_user.id
+    ).first()
+    
+    if existing:
+        return {"message": "User is already a collaborator", "role": existing.role}
+        
+    collab = ItineraryCollaborator(
+        itinerary_id=itinerary_id,
+        user_id=invited_user.id,
+        role="editor"
+    )
+    db.add(collab)
+    db.commit()
+    
+    EmailService.send_confirmation_email(
+        user_email=invited_user.email,
+        user_name=invited_user.name,
+        itinerary_name=f"Invitation to collaborate: {itinerary.name}",
+        total_price=0.0
+    )
+
+    notif = Notification(
+        user_id=invited_user.id,
+        type="collaborator_added",
+        message=f"You've been invited to collaborate on '{itinerary.name}' by {current_user.name}."
+    )
+    db.add(notif)
+    db.commit()
+
+    return {"message": "Collaborator added successfully", "user_id": invited_user.id}
+
+
+@app.delete("/api/itineraries/{itinerary_id}")
+def delete_itinerary(itinerary_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    itinerary = db.query(Itinerary).filter(Itinerary.id == itinerary_id).first()
+    if not itinerary:
+        raise HTTPException(status_code=404, detail="Itinerary not found")
+    
+    # Simple check: only creator can delete for now
+    if itinerary.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
     db.delete(itinerary)
     db.commit()
-    return {"message": "Itinerary deleted"}
+    return {"message": "Itinerary deleted successfully"}
+
+
+@app.get("/api/itineraries/{itinerary_id}/export/pdf")
+def get_itinerary_pdf(itinerary_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    itinerary = db.query(Itinerary).filter(Itinerary.id == itinerary_id).first()
+    if not itinerary:
+        raise HTTPException(status_code=404, detail="Itinerary not found")
+        
+    # Check authorization
+    if itinerary.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    pdf_bytes_io = PDFService.generate_itinerary_pdf(itinerary, current_user)
+    
+    headers = {
+        'Content-Disposition': f'attachment; filename="SmartTravel_Itinerary_{itinerary_id}.pdf"'
+    }
+    
+    return StreamingResponse(pdf_bytes_io, headers=headers, media_type="application/pdf")
 
 
 # ============== Booking Routes ==============
+@app.delete("/api/itineraries/{itinerary_id}/flights/{flight_id}")
+def remove_flight(
+    itinerary_id: int,
+    flight_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    itinerary = db.query(Itinerary).filter(Itinerary.id == itinerary_id).first()
+    if not itinerary or itinerary.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    flight = db.query(FlightBooking).filter(
+        FlightBooking.id == flight_id, FlightBooking.itinerary_id == itinerary_id
+    ).first()
+    if not flight:
+        raise HTTPException(status_code=404, detail="Flight not found")
+    db.delete(flight)
+    db.commit()
+    return {"message": "Flight removed"}
+
+
+@app.delete("/api/itineraries/{itinerary_id}/hotels/{hotel_id}")
+def remove_hotel(
+    itinerary_id: int,
+    hotel_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    itinerary = db.query(Itinerary).filter(Itinerary.id == itinerary_id).first()
+    if not itinerary or itinerary.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    hotel = db.query(HotelBooking).filter(
+        HotelBooking.id == hotel_id, HotelBooking.itinerary_id == itinerary_id
+    ).first()
+    if not hotel:
+        raise HTTPException(status_code=404, detail="Hotel not found")
+    db.delete(hotel)
+    db.commit()
+    return {"message": "Hotel removed"}
+
+
+@app.delete("/api/itineraries/{itinerary_id}/activities/{activity_id}")
+def remove_activity(
+    itinerary_id: int,
+    activity_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    itinerary = db.query(Itinerary).filter(Itinerary.id == itinerary_id).first()
+    if not itinerary or itinerary.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    activity = db.query(ActivityBooking).filter(
+        ActivityBooking.id == activity_id, ActivityBooking.itinerary_id == itinerary_id
+    ).first()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    db.delete(activity)
+    db.commit()
+    return {"message": "Activity removed"}
+
+
 @app.post("/api/itineraries/{itinerary_id}/flights", response_model=FlightBookingResponse)
 def add_flight_to_itinerary(
     itinerary_id: int,
@@ -353,6 +575,83 @@ def remove_favorite_destination(
     db.delete(favorite)
     db.commit()
     return {"message": "Favorite removed"}
+
+
+# ============== Price Alerts ==============
+@app.post("/api/users/{user_id}/alerts", response_model=PriceAlertResponse)
+def create_price_alert(
+    user_id: int,
+    alert_data: PriceAlertCreate,
+    db: Session = Depends(get_db)
+):
+    alert = PriceAlert(user_id=user_id, **alert_data.model_dump())
+    db.add(alert)
+    db.commit()
+    db.refresh(alert)
+    return alert
+
+
+@app.get("/api/users/{user_id}/alerts", response_model=List[PriceAlertResponse])
+def get_price_alerts(user_id: int, db: Session = Depends(get_db)):
+    return db.query(PriceAlert).filter(PriceAlert.user_id == user_id).all()
+
+
+@app.delete("/api/users/{user_id}/alerts/{alert_id}")
+def delete_price_alert(user_id: int, alert_id: int, db: Session = Depends(get_db)):
+    alert = db.query(PriceAlert).filter(
+        PriceAlert.id == alert_id, PriceAlert.user_id == user_id
+    ).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    db.delete(alert)
+    db.commit()
+    return {"message": "Alert deleted"}
+
+
+# ============== Notifications ==============
+@app.get("/api/users/{user_id}/notifications", response_model=List[NotificationResponse])
+def get_notifications(user_id: int, db: Session = Depends(get_db)):
+    return db.query(Notification).filter(
+        Notification.user_id == user_id
+    ).order_by(Notification.created_at.desc()).limit(50).all()
+
+
+@app.put("/api/users/{user_id}/notifications/{notification_id}/read")
+def mark_notification_read(user_id: int, notification_id: int, db: Session = Depends(get_db)):
+    notif = db.query(Notification).filter(
+        Notification.id == notification_id, Notification.user_id == user_id
+    ).first()
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    notif.is_read = True
+    db.commit()
+    return {"message": "Marked as read"}
+
+
+@app.put("/api/users/{user_id}/notifications/read-all")
+def mark_all_notifications_read(user_id: int, db: Session = Depends(get_db)):
+    db.query(Notification).filter(
+        Notification.user_id == user_id, Notification.is_read == False
+    ).update({"is_read": True})
+    db.commit()
+    return {"message": "All notifications marked as read"}
+
+
+# ============== Destination Details ==============
+@app.get("/api/destinations/{destination}/details")
+def get_destination_details(destination: str):
+    from services import DESTINATIONS
+    dest_key = destination.lower()
+    info = DESTINATIONS.get(dest_key)
+    if not info:
+        raise HTTPException(status_code=404, detail="Destination not found")
+    return {
+        "name": destination.title(),
+        "airport": info["airport"],
+        "country": info["country"],
+        "image": info.get("image", ""),
+        "base_price": info["base_price"]
+    }
 
 
 # ============== Run the application ==============
