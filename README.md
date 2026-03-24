@@ -1,87 +1,153 @@
-# 🌍 Smart Travel: AI-Powered Vacation Planner
+# Smart Travel — AI-Powered Vacation Planner
 
-![Project Status](https://img.shields.io/badge/Status-Completed-success)
+![Status](https://img.shields.io/badge/Status-Production--Ready-success)
 ![Version](https://img.shields.io/badge/Version-1.0.0-blue)
-![React](https://img.shields.io/badge/Frontend-React%2018-cyan)
-![FastAPI](https://img.shields.io/badge/Backend-FastAPI-teal)
+![React](https://img.shields.io/badge/Frontend-React%2018-61DAFB?logo=react)
+![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)
+![Python](https://img.shields.io/badge/Python-3.9+-3776AB?logo=python)
 
-**Smart Travel** is a sophisticated, full-stack web application developed as a Senior Design Capstone Project. It functions as an intelligent travel agent, instantly generating highly personalized, bookable vacation itineraries based on user constraints (budget, dates, and interests).
-
-## ✨ Core Features Designed for Capstone
-
-- **Premium UI/UX Architecture**: Built with Vite, React, Tailwind CSS, and Framer Motion. Features a modern dark-mode glassmorphism aesthetic, complex scroll animations, and dynamic staggered load states.
-- **Bulletproof External APIs**: Integrated with **Duffel** (Flights/Hotels) and **Viator** (Activities).
-- **Presentation-Safe Fallback System**: If API keys are missing, expired, or network requests fail during a live grading demo, the backend *automatically and seamlessly* falls back to a realistic "Advanced Mock" data engine. The transition is completely invisible to the end user.
-- **Secure JWT Authentication**: Industry-standard robust login and registration using `passlib(bcrypt)` and custom Axios interceptors.
-- **Business-Grade PDF Exports**: Generates and serves a `.pdf` of the entire itinerary using `fpdf2` and `StreamingResponse`.
-- **💳 Simulated Payment Processing**: A hyper-realistic Stripe checkout simulation component with latency timers and visual success validation.
-- **Price Drop Monitor**: An active background worker utilizing `APScheduler` tracking booked drafts.
-- **Ethereal Email Dispatch**: Console-logged HTML email triggers to prove notification system competence without setting up a local SMTP server.
-- **Progressive Web App (PWA)**: Implemented offline caching via `vite-plugin-pwa` to cache application shells and API requests.
-- **Collaborative Group Trips**: SQL relational join tables (`ItineraryCollaborator`) allowing shared itinerary editing.
+**Smart Travel** is a full-stack AI-powered travel agent built as a Senior Design Capstone project at the University of Cincinnati. Users enter a budget, dates, and interests — the system returns ranked flight, hotel, and activity packages, lets users book and manage itineraries, and monitors prices in the background.
 
 ---
 
-## 🛠️ Technology Stack
+## Features
 
-**Frontend Layer:**
-- **React 18** (Vite Build Tool)
-- **Tailwind CSS** (Utility Styling)
-- **Framer Motion** (Animation/Micro-interactions)
-- **Axios** (HTTP Client with JWT interceptors)
-- **Lucide React** (Vector Iconography)
+### Search & Recommendations
+- Multi-factor AI scoring engine ranks flights, hotels, and activities (0–100% match score)
+- Budget-aware allocation (35% flights / 45% hotels / 20% activities)
+- Real API integrations: **Duffel** (flights) and **Viator** (activities)
+- Automatic fallback to realistic mock data if API keys are absent
 
-**Backend Layer:**
-- **Python 3.9+** & **FastAPI** (High-performance web framework)
-- **SQLAlchemy** (ORM) & **SQLite** (Relational Database)
-- **Pydantic** (Strict Data Validation)
-- **PyJWT & bcrypt** (Cryptography/Security)
+### Itinerary Management
+- Create, view, edit, and delete itineraries
+- Add or remove individual flights, hotels, and activities
+- Status workflow: `draft → confirmed → completed`
+- Export any itinerary to a formatted **PDF**
+- Simulated checkout / payment flow
+
+### Notifications & Alerts
+- **Price alerts** — set a target price per destination; get notified when it's reached
+- **In-app notification bell** — real-time badge with unread count, 30-second polling
+- Background scheduler checks for price drops every 2 minutes
+- Email notifications via SMTP (falls back to console log if not configured)
+
+### User System
+- JWT authentication (7-day tokens) with bcrypt password hashing
+- Saved preferences: budget ceiling, travel style, interests
+- Favorite destinations
+- Collaborative itineraries (invite other users as editors/viewers)
+
+### Frontend
+- Dark-mode glassmorphism UI — React 18, Tailwind CSS, Framer Motion
+- React Context for global auth state (`AuthContext`)
+- Responsive — mobile, tablet, desktop
+- Progressive Web App (PWA) with offline caching
 
 ---
 
-## 🚀 How to Run the Application Locally
+## Project Structure
 
-The project is split into a separated frontend and backend. You will need **two independent terminal windows** to run the application.
+```
+smart-travel/
+├── backend/
+│   ├── main.py                  # All API routes (FastAPI)
+│   ├── models.py                # SQLAlchemy ORM models
+│   ├── schemas.py               # Pydantic request/response schemas
+│   ├── services.py              # Duffel, Viator, mock data services
+│   ├── recommendation_engine.py # Scoring & ranking logic
+│   ├── auth.py                  # JWT + bcrypt
+│   ├── email_service.py         # SMTP email (console fallback)
+│   ├── pdf_service.py           # PDF generation (fpdf2)
+│   ├── scheduler.py             # Background price-drop monitor (APScheduler)
+│   └── requirements.txt
+│
+├── frontend/
+│   ├── src/
+│   │   ├── context/
+│   │   │   └── AuthContext.jsx       # Global auth state
+│   │   ├── pages/
+│   │   │   ├── Home.jsx
+│   │   │   ├── Search.jsx            # Search form + recommendation cards
+│   │   │   ├── Login.jsx             # Login / Register
+│   │   │   ├── Itineraries.jsx       # All itineraries list
+│   │   │   ├── ItineraryDetailPage.jsx # Single itinerary view/edit
+│   │   │   ├── Favorites.jsx
+│   │   │   ├── Profile.jsx
+│   │   │   └── AlertsPage.jsx        # Price alerts management
+│   │   ├── components/
+│   │   │   ├── Navbar.jsx
+│   │   │   ├── NotificationBell.jsx  # Live notification dropdown
+│   │   │   ├── RecommendationCard.jsx
+│   │   │   ├── CheckoutSimulation.jsx
+│   │   │   └── SearchableDropdown.jsx
+│   │   └── services/
+│   │       └── api.js               # Axios client with JWT interceptor
+│   └── package.json
+│
+├── docs/                        # Capstone documentation
+├── .env.example                 # Environment variable template
+└── README.md
+```
 
-### 1. Start the Backend Server (Terminal 1)
+---
+
+## Getting Started
+
+You need **two terminals** — one for the backend, one for the frontend.
+
+### Backend
 ```bash
-# 1. Navigate to the backend directory
 cd backend
-
-# 2. Install all required Python dependencies
 pip install -r requirements.txt
-
-# 3. Start the FastAPI server on port 8000
 python -m uvicorn main:app --reload
 ```
-You can verify the backend is running by visiting the autogenerated Swagger API documentation at: `http://localhost:8000/docs`
+API docs available at: `http://localhost:8000/docs`
 
-### 2. Start the Frontend Server (Terminal 2)
+### Frontend
 ```bash
-# 1. Navigate to the frontend directory
 cd frontend
-
-# 2. Install all required Node packages
 npm install
-
-# 3. Start the Vite development server on port 3000
 npm run dev
 ```
-You can view the fully responsive web application natively at: `http://localhost:3000`
+App available at: `http://localhost:3000`
 
 ---
 
-## 🔑 Environment Variables & API Keys (Optional)
-The application is pre-configured to run flawlessly **without** valid API keys using our proprietary Advanced Mock data layer. 
+## Environment Variables
 
-If you wish to query live production data, create a `.env` file in the root `d:\smart-travel\.env` and populate:
-```env
-DUFFEL_ACCESS_TOKEN="your_duffel_key_here"
-VIATOR_API_KEY="your_viator_key_here"
-```
+Copy `.env.example` to `.env` in the project root and fill in your keys. The app runs fully on mock data without any keys.
+
+| Variable | Description |
+|---|---|
+| `DUFFEL_ACCESS_TOKEN` | Duffel API key for live flight search |
+| `VIATOR_API_KEY` | Viator API key for live activity search |
+| `SMTP_HOST` / `SMTP_USER` / `SMTP_PASSWORD` | Gmail or Mailtrap for real emails |
+| `JWT_SECRET_KEY` | Secret for signing JWT tokens |
 
 ---
 
-## 🎓 Academic Disclosure
-Developed by **Sai Venkata Subhash Vakkalagadda** and **Sethu Kruthin Nagari** for the Computer Science Senior Design Capstone at the University of Cincinnati.
-Expected presentation standard: **Production-Grade**.
+## API Overview
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/users/register` | Register |
+| POST | `/api/users/login` | Login → JWT |
+| POST | `/api/search` | Get recommendations |
+| POST | `/api/itineraries` | Create itinerary |
+| GET | `/api/itineraries/{id}` | Get itinerary with all bookings |
+| GET | `/api/itineraries/{id}/export/pdf` | Download PDF |
+| POST | `/api/users/{id}/alerts` | Create price alert |
+| GET | `/api/users/{id}/notifications` | Get notifications |
+
+Full interactive docs: `http://localhost:8000/docs`
+
+---
+
+## Team
+
+| Name | Program |
+|---|---|
+| Sai Venkata Subhash Vakkalagadda | Computer Science, University of Cincinnati |
+| Sethu Kruthin Nagari | Computer Science, University of Cincinnati |
+
+Faculty Advisor: Dr. Nitin, Department of EECS
