@@ -25,15 +25,44 @@ export default function SearchPage() {
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [destinations, setDestinations] = useState([]);
-  const [airports, setAirports] = useState([]);
+  const FALLBACK_DESTINATIONS = [
+    { name: 'Paris', airport: 'CDG', country: 'France' },
+    { name: 'London', airport: 'LHR', country: 'UK' },
+    { name: 'Tokyo', airport: 'NRT', country: 'Japan' },
+    { name: 'New York', airport: 'JFK', country: 'USA' },
+    { name: 'Los Angeles', airport: 'LAX', country: 'USA' },
+    { name: 'Miami', airport: 'MIA', country: 'USA' },
+    { name: 'Rome', airport: 'FCO', country: 'Italy' },
+    { name: 'Barcelona', airport: 'BCN', country: 'Spain' },
+    { name: 'Sydney', airport: 'SYD', country: 'Australia' },
+    { name: 'Dubai', airport: 'DXB', country: 'UAE' },
+    { name: 'Bali', airport: 'DPS', country: 'Indonesia' },
+    { name: 'Cancun', airport: 'CUN', country: 'Mexico' },
+    { name: 'Hawaii', airport: 'HNL', country: 'USA' },
+    { name: 'Las Vegas', airport: 'LAS', country: 'USA' },
+    { name: 'San Francisco', airport: 'SFO', country: 'USA' },
+  ];
+  const FALLBACK_AIRPORTS = [
+    { code: 'BOM', name: 'Chhatrapati Shivaji Maharaj International', city: 'Mumbai' },
+    { code: 'DEL', name: 'Indira Gandhi International', city: 'Delhi' },
+    { code: 'BLR', name: 'Kempegowda International', city: 'Bengaluru' },
+    { code: 'HYD', name: 'Rajiv Gandhi International', city: 'Hyderabad' },
+    { code: 'JFK', name: 'John F. Kennedy International', city: 'New York' },
+    { code: 'LAX', name: 'Los Angeles International', city: 'Los Angeles' },
+    { code: 'LHR', name: 'Heathrow Airport', city: 'London' },
+    { code: 'DXB', name: 'Dubai International', city: 'Dubai' },
+    { code: 'SIN', name: 'Changi Airport', city: 'Singapore' },
+    { code: 'NRT', name: 'Narita International', city: 'Tokyo' },
+  ];
+  const [destinations, setDestinations] = useState(FALLBACK_DESTINATIONS);
+  const [airports, setAirports] = useState(FALLBACK_AIRPORTS);
 
   const interestOptions = ['adventure', 'culture', 'relaxation', 'food', 'nightlife'];
   const styleOptions = ['budget', 'mid-range', 'luxury'];
 
   useEffect(() => {
-    searchAPI.getDestinations().then(res => setDestinations(res.data)).catch(console.error);
-    searchAPI.getAirports().then(res => setAirports(res.data)).catch(console.error);
+    searchAPI.getDestinations().then(res => { if (res.data?.length) setDestinations(res.data); }).catch(console.error);
+    searchAPI.getAirports().then(res => { if (res.data?.length) setAirports(res.data); }).catch(console.error);
   }, []);
 
   useEffect(() => {

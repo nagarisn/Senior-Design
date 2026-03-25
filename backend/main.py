@@ -278,6 +278,19 @@ def get_airports():
         {"code": "MSP", "name": "Minneapolis-Saint Paul International", "city": "Minneapolis"},
         {"code": "DTW", "name": "Detroit Metropolitan", "city": "Detroit"},
         {"code": "PHL", "name": "Philadelphia International", "city": "Philadelphia"},
+        {"code": "BOM", "name": "Chhatrapati Shivaji Maharaj International", "city": "Mumbai"},
+        {"code": "DEL", "name": "Indira Gandhi International", "city": "Delhi"},
+        {"code": "BLR", "name": "Kempegowda International", "city": "Bengaluru"},
+        {"code": "MAA", "name": "Chennai International", "city": "Chennai"},
+        {"code": "HYD", "name": "Rajiv Gandhi International", "city": "Hyderabad"},
+        {"code": "LHR", "name": "Heathrow Airport", "city": "London"},
+        {"code": "CDG", "name": "Charles de Gaulle Airport", "city": "Paris"},
+        {"code": "DXB", "name": "Dubai International", "city": "Dubai"},
+        {"code": "SIN", "name": "Changi Airport", "city": "Singapore"},
+        {"code": "NRT", "name": "Narita International", "city": "Tokyo"},
+        {"code": "SYD", "name": "Kingsford Smith Airport", "city": "Sydney"},
+        {"code": "YYZ", "name": "Toronto Pearson International", "city": "Toronto"},
+        {"code": "FRA", "name": "Frankfurt Airport", "city": "Frankfurt"},
     ]
     return airports
 
