@@ -168,9 +168,6 @@ class FlightService:
             price_variation = random.uniform(0.8, 1.4)
             price = round(base * price_variation * travelers, 2)
             
-            if price > budget_max:
-                continue
-            
             # Random departure time
             hour = random.randint(6, 22)
             dep_time = departure_date.replace(hour=hour, minute=random.choice([0, 15, 30, 45]))
@@ -240,9 +237,6 @@ class HotelService:
                 price_mult = random.uniform(0.85, 1.25)
                 price_per_night = round(hotel_template["base_price"] * price_mult, 2)
                 total_price = round(price_per_night * num_nights, 2)
-                
-                if total_price > budget_max:
-                    continue
                 
                 # Add location variation to name
                 location_suffix = random.choice(["Downtown", "City Center", "Airport", "Beach", "Old Town", ""])
